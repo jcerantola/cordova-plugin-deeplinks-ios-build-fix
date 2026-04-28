@@ -1,6 +1,6 @@
 {
   "name": "cordova-plugin-deeplinks-ios-build-fix",
-  "version": "1.0.10",
+  "version": "1.0.20",
   "description": "Cordova plugin to add in your application support for Universal Links (iOS 9) and Deep Links (Android). Basically, open application through the link in the browser.",
   "cordova": {
     "id": "cordova-plugin-deeplinks",
@@ -34,14 +34,14 @@
     "xml2js": ">=0.4",
     "rimraf": ">=3.0.2",
     "node-version-compare": ">=1.0.1",
-    "plist": ">=1.2.0"
+    "plist": "3.1.0"
   },
   "author": "CBI",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/jammin197/cordova-plugin-deeplinks-ios-build-fix/issues"
+    "url": "https://github.com/jcerantola/cordova-plugin-deeplinks-ios-build-fix/issues"
   },
-  "homepage": "https://github.com/jammin197/cordova-plugin-deeplinks-ios-build-fix#readme",
+  "homepage": "https://github.com/jcerantola/cordova-plugin-deeplinks-ios-build-fix#readme",
   "devDependencies": {
     "standard-version": "^7.0.0"
   },
