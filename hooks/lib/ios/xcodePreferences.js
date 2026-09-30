@@ -19,23 +19,11 @@ module.exports = {
 
 // region Public API
 
-/**
- * Activate associated domains capability for the application.
- *
- * @param {Object} cordovaContext - cordova context object
- */
 function enableAssociativeDomainsCapability(cordovaContext) {
   context = cordovaContext;
-
   var projectFile = loadProjectFile();
-
-  // adjust preferences
   activateAssociativeDomains(projectFile.xcode);
-
-  // add entitlements file to pbxfilereference
   addPbxReference(projectFile.xcode);
-
-  // save changes
   projectFile.write();
 }
 
@@ -43,13 +31,6 @@ function enableAssociativeDomainsCapability(cordovaContext) {
 
 // region Alter project file preferences
 
-/**
- * Activate associated domains support in the xcode project file:
- * - set deployment target to ios 9;
- * - add .entitlements file to Code Sign Entitlements preference.
- *
- * @param {Object} xcodeProject - xcode project preferences; all changes are made in that instance
- */
 function activateAssociativeDomains(xcodeProject) {
   var configurations = nonComments(xcodeProject.pbxXCBuildConfigurationSection());
   var entitlementsFilePath = pathToEntitlementsFile();
@@ -61,7 +42,6 @@ function activateAssociativeDomains(xcodeProject) {
     buildSettings = configurations[config].buildSettings;
     buildSettings['CODE_SIGN_ENTITLEMENTS'] = '"' + entitlementsFilePath + '"';
 
-    // if deployment target is less then the required one - increase it
     if (buildSettings['IPHONEOS_DEPLOYMENT_TARGET']) {
       if (compare(buildSettings['IPHONEOS_DEPLOYMENT_TARGET'], IOS_DEPLOYMENT_TARGET) == -1) {
         buildSettings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET;
@@ -84,11 +64,6 @@ function activateAssociativeDomains(xcodeProject) {
 
 // region PBXReference methods
 
-/**
- * Add .entitlemets file into the project.
- *
- * @param {Object} xcodeProject - xcode project preferences; all changes are made in that instance
- */
 function addPbxReference(xcodeProject) {
   var fileReferenceSection = nonComments(xcodeProject.pbxFileReferenceSection());
   var entitlementsFileName = path.basename(pathToEntitlementsFile());
@@ -102,13 +77,6 @@ function addPbxReference(xcodeProject) {
   xcodeProject.addResourceFile(entitlementsFileName);
 }
 
-/**
- * Check if .entitlemets file reference already set.
- *
- * @param {Object} fileReferenceSection - PBXFileReference section
- * @param {String} entitlementsRelativeFilePath - relative path to entitlements file
- * @return true - if reference is set; otherwise - false
- */
 function isPbxReferenceAlreadySet(fileReferenceSection, entitlementsRelativeFilePath) {
   var isAlreadyInReferencesSection = false;
   var uuid;
@@ -127,72 +95,63 @@ function isPbxReferenceAlreadySet(fileReferenceSection, entitlementsRelativeFile
 
 // region Xcode project file helpers
 
-/**
- * Load iOS project file from platform specific folder.
- *
- * @return {Object} projectFile - project file information
- */
 function loadProjectFile() {
   var platform_ios;
   var projectFile;
-  
-  try {
-      // try pre-5.0 cordova structure
-      platform_ios = context.requireCordovaModule('cordova-lib/src/plugman/platforms')['ios'];
-      projectFile = platform_ios.parseProjectFile(iosPlatformPath());
-  } catch (e) {
-      try {
-          // let's try cordova 5.0 structure
-          platform_ios = context.requireCordovaModule('cordova-lib/src/plugman/platforms/ios');
-          projectFile = platform_ios.parseProjectFile(iosPlatformPath());
-      } catch (e) {
-          // Then cordova 7.0
-          console.log('Cordova 7.0 detected - apply globSync()');
-          var project_files = require('glob').globSync(path.join(iosPlatformPath(), '*.xcodeproj', 'project.pbxproj'));
-          console.log('project_files:');
-          console.log(project_files);
-          
-          if (project_files.length === 0) {
-              throw new Error('does not appear to be an xcode project (no xcode project file)');
-          }
-          
-          var pbxPath = project_files[0];
-          
-          var xcodeproj = require('xcode').project(pbxPath);
-          xcodeproj.parseSync();
-          
-          projectFile = {
-              'xcode': xcodeproj,
-              write: function () {
-                  var fs = require('fs');
-                  
-              var frameworks_file = path.join(iosPlatformPath(), 'frameworks.json');
-              var frameworks = {};
-              try {
-                  frameworks = context.requireCordovaModule(frameworks_file);
-              } catch (e) { }
-              
-              fs.writeFileSync(pbxPath, xcodeproj.writeSync());
-                  if (Object.keys(frameworks).length === 0){
-                      // If there is no framework references remain in the project, just remove this file
-                      require('shelljs').rm('-rf', frameworks_file);
-                      return;
-                  }
-                  fs.writeFileSync(frameworks_file, JSON.stringify(this.frameworks, null, 4));
-              }
-          };
-      }
-  }
-  
-  return projectFile;
-  } 
 
-/**
- * Remove comments from the file.
- *
- * @param {Object} obj - file object
- * @return {Object} file object without comments
- */
+  try {
+    platform_ios = context.requireCordovaModule('cordova-lib/src/plugman/platforms')['ios'];
+    projectFile = platform_ios.parseProjectFile(iosPlatformPath());
+  } catch (e) {
+    try {
+      platform_ios = context.requireCordovaModule('cordova-lib/src/plugman/platforms/ios');
+      projectFile = platform_ios.parseProjectFile(iosPlatformPath());
+    } catch (e) {
+      console.log('Cordova 7.0+ detected - apply globSync()');
+      var project_files = require('glob').globSync(path.join(iosPlatformPath(), '*.xcodeproj', 'project.pbxproj'));
+      console.log('project_files:');
+      console.log(project_files);
+
+      if (project_files.length === 0) {
+        throw new Error('does not appear to be an xcode project (no xcode project file)');
+      }
+
+      var pbxPath = project_files[0];
+      var xcodeproj = require('xcode').project(pbxPath);
+      xcodeproj.parseSync();
+
+      projectFile = {
+        'xcode': xcodeproj,
+        write: function () {
+          var fs = require('fs');
+          var frameworks_file = path.join(iosPlatformPath(), 'frameworks.json');
+          var frameworks = {};
+          try {
+            frameworks = context.requireCordovaModule(frameworks_file);
+          } catch (e) { }
+
+          fs.writeFileSync(pbxPath, xcodeproj.writeSync());
+          if (Object.keys(frameworks).length === 0) {
+            // shelljs is not guaranteed to be available in modern Cordova.
+            // frameworks.json is a file, so native fs is sufficient here.
+            try {
+              fs.unlinkSync(frameworks_file);
+            } catch (e) {
+              if (e.code !== 'ENOENT') {
+                throw e;
+              }
+            }
+            return;
+          }
+          fs.writeFileSync(frameworks_file, JSON.stringify(this.frameworks, null, 4));
+        }
+      };
+    }
+  }
+
+  return projectFile;
+}
+
 function nonComments(obj) {
   var keys = Object.keys(obj);
   var newObj = {};
@@ -219,6 +178,13 @@ function projectRoot() {
 }
 
 function pathToEntitlementsFile() {
+  // cordova-ios 8 always creates App.xcodeproj and keeps the native source
+  // directory named App, independently of the application's display name.
+  var projectFiles = require('glob').globSync(path.join(iosPlatformPath(), '*.xcodeproj'));
+  if (projectFiles.some(function(projectFile) { return path.basename(projectFile) === 'App.xcodeproj'; })) {
+    return path.join('App', 'Resources', 'App.entitlements');
+  }
+
   var configXmlHelper = new ConfigXmlHelper(context),
     projectName = configXmlHelper.getProjectName(),
     fileName = projectName + '.entitlements';
