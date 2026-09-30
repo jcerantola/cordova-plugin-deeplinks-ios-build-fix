@@ -53,6 +53,18 @@ function activateAssociativeDomains(xcodeProject) {
 }
 
 function addPbxReference(xcodeProject) {
+  // cordova-ios 8 uses App.xcodeproj with the native sources/resources under
+  // platforms/ios/App. The entitlements file is a code-signing input, not an
+  // application resource. Adding it with addResourceFile() causes the PBX
+  // group path to be prepended to CODE_SIGN_ENTITLEMENTS and Xcode resolves
+  // App/Resources/App.entitlements as App/Resources/App/Resources/App.entitlements.
+  // The file only needs to exist on disk and be referenced by
+  // CODE_SIGN_ENTITLEMENTS.
+  if (isCordovaIos8Layout()) {
+    console.log('cordova-ios 8+ detected; entitlements will not be added to PBXResourcesBuildPhase.');
+    return;
+  }
+
   var fileReferenceSection = nonComments(xcodeProject.pbxFileReferenceSection());
   var entitlementsFilePath = pathToEntitlementsFile();
   var entitlementsFileName = path.basename(entitlementsFilePath);
@@ -81,7 +93,6 @@ function loadProjectFile() {
     throw new Error('does not appear to be an xcode project (no xcode project file)');
   }
 
-  // cordova-ios 8 always creates App.xcodeproj. Prefer it when present.
   var appProject = path.join(platformPath, 'App.xcodeproj', 'project.pbxproj');
   var pbxPath = fs.existsSync(appProject) ? appProject : projectFiles[0];
   var xcodeproj = require('xcode').project(pbxPath);
