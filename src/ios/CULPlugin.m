@@ -11,6 +11,7 @@
 #import "CDVPluginResult+CULPlugin.h"
 #import "CDVInvokedUrlCommand+CULPlugin.h"
 #import "CULConfigJsonParser.h"
+#import <Cordova/CDVPluginNotifications.h>
 
 @interface CULPlugin() {
     NSArray *_supportedHosts;
@@ -26,9 +27,27 @@
 
 - (void)pluginInitialize {
     [self localInit];
+
+    // cordova-ios 8.1+ routes Universal Links received by CDVSceneDelegate
+    // through this notification. Forward it to the plugin's existing handler
+    // so all original parsing/event/subscriber behavior remains unchanged.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(onSceneContinueUserActivity:)
+                                                 name:CDVPluginContinueUserActivityNotification
+                                               object:nil];
+
     // Can be used for testing.
     // Just uncomment, close the app and reopen it. That will simulate application launch from the link.
 //    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onResume:) name:UIApplicationWillEnterForegroundNotification object:nil];
+}
+
+- (void)onSceneContinueUserActivity:(NSNotification *)notification {
+    id activity = notification.object;
+    if (![activity isKindOfClass:[NSUserActivity class]]) {
+        return;
+    }
+
+    [self handleUserActivity:(NSUserActivity *)activity];
 }
 
 //- (void)onResume:(NSNotification *)notification {
@@ -65,6 +84,8 @@
 }
 
 - (void)onAppTerminate {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+
     _supportedHosts = nil;
     _subscribers = nil;
     _storedEvent = nil;
