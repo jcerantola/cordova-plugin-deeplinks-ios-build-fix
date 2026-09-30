@@ -25,6 +25,13 @@ function run(ctx) {
 
   var oldProjectName = getOldProjectName(iosProjectFilePath);
 
+  // cordova-ios 8 always uses App.xcodeproj/App as the physical project name.
+  // Do not rename App.entitlements to the display name: the generated project
+  // must keep its App/Resources/App.entitlements path.
+  if (oldProjectName === 'App') {
+    return;
+  }
+
   // if name has not changed - do nothing
   if (oldProjectName.length && oldProjectName === newProjectName) {
     return;
