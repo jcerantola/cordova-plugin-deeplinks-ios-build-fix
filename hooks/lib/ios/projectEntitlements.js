@@ -138,11 +138,21 @@ function domainsListEntryForHost(host) {
 /**
  * Path to entitlements file.
  *
- * @return {String} absolute path to entitlements file
+ * cordova-ios 8 always creates the native project/source directory as App.
+ * Older cordova-ios versions use the display/project name from config.xml.
+ *
+ * @return {String} absolute path to the entitlements file
  */
 function pathToEntitlementsFile() {
   if (entitlementsFilePath === undefined) {
-    entitlementsFilePath = path.join(getProjectRoot(), 'platforms', 'ios', getProjectName(), 'Resources', getProjectName() + '.entitlements');
+    var iosPath = path.join(getProjectRoot(), 'platforms', 'ios');
+    var appProjectPath = path.join(iosPath, 'App.xcodeproj');
+
+    if (fs.existsSync(appProjectPath)) {
+      entitlementsFilePath = path.join(iosPath, 'App', 'Resources', 'App.entitlements');
+    } else {
+      entitlementsFilePath = path.join(iosPath, getProjectName(), 'Resources', getProjectName() + '.entitlements');
+    }
   }
 
   return entitlementsFilePath;
