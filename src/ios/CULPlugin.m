@@ -18,7 +18,6 @@
     CDVPluginResult *_storedEvent;
     NSMutableDictionary<NSString *, NSString *> *_subscribers;
 }
-
 @end
 
 @implementation CULPlugin
@@ -28,29 +27,19 @@
 - (void)pluginInitialize {
     [self localInit];
 
-    // cordova-ios 8 routes Universal Links through CDVSceneDelegate instead of
-    // AppDelegate. CDVSceneDelegate posts this notification for both a running
-    // scene and (with the Cordova cold-start lifecycle) a launch user activity.
-    // Keeping the AppDelegate category preserves the behaviour on older
-    // cordova-ios versions.
+    // cordova-ios 8 delivers Universal Links through CDVSceneDelegate.
+    // This is the only runtime compatibility bridge added to the original plugin.
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(onContinueUserActivity:)
+                                             selector:@selector(cul_continueUserActivity:)
                                                  name:CDVPluginContinueUserActivityNotification
                                                object:nil];
 }
 
-- (void)onContinueUserActivity:(NSNotification *)notification {
-    id activity = notification.object;
-    if (![activity isKindOfClass:[NSUserActivity class]]) {
-        return;
+- (void)cul_continueUserActivity:(NSNotification *)notification {
+    NSUserActivity *userActivity = notification.object;
+    if ([userActivity isKindOfClass:[NSUserActivity class]]) {
+        [self handleUserActivity:userActivity];
     }
-
-    NSUserActivity *userActivity = (NSUserActivity *)activity;
-    if (![userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb] || userActivity.webpageURL == nil) {
-        return;
-    }
-
-    [self handleUserActivity:userActivity];
 }
 
 - (void)handleOpenURL:(NSNotification*)notification {
@@ -58,7 +47,7 @@
     if (![url isKindOfClass:[NSURL class]]) {
         return;
     }
-
+    
     CULHost *host = [self findHostByURL:url];
     if (host) {
         [self storeEventWithHost:host originalURL:url];
@@ -67,27 +56,21 @@
 
 - (BOOL)handleUserActivity:(NSUserActivity *)userActivity {
     [self localInit];
-
+    
     NSURL *launchURL = userActivity.webpageURL;
     CULHost *host = [self findHostByURL:launchURL];
     if (host == nil) {
         return NO;
     }
-
+    
     [self storeEventWithHost:host originalURL:launchURL];
-
     return YES;
 }
 
 - (void)onAppTerminate {
-    [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:CDVPluginContinueUserActivityNotification
-                                                  object:nil];
-
     _supportedHosts = nil;
     _subscribers = nil;
     _storedEvent = nil;
-
     [super onAppTerminate];
 }
 
@@ -97,11 +80,8 @@
     if (_supportedHosts) {
         return;
     }
-
+    
     _subscribers = [[NSMutableDictionary alloc] init];
-
-    // Get supported hosts from the config.xml or www/ul.json.
-    // For now priority goes to json config.
     _supportedHosts = [self getSupportedHostsFromPreferences];
 }
 
@@ -110,7 +90,6 @@
     if (jsonConfigPath) {
         return [CULConfigJsonParser parseConfig:jsonConfigPath];
     }
-
     return [CULConfigXmlParser parse];
 }
 
@@ -129,7 +108,6 @@
             break;
         }
     }
-
     return host;
 }
 
@@ -139,7 +117,7 @@
     if (_subscribers.count == 0 || _storedEvent == nil) {
         return;
     }
-
+    
     NSString *storedEventName = [_storedEvent eventName];
     for (NSString *eventName in _subscribers) {
         if ([storedEventName isEqualToString:eventName]) {
@@ -158,7 +136,6 @@
     if (eventName.length == 0) {
         return;
     }
-
     _subscribers[eventName] = command.callbackId;
     [self tryToConsumeEvent];
 }
@@ -168,7 +145,6 @@
     if (eventName.length == 0) {
         return;
     }
-
     [_subscribers removeObjectForKey:eventName];
 }
 
