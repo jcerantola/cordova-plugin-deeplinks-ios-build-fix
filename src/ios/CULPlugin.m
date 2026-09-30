@@ -11,13 +11,13 @@
 #import "CDVPluginResult+CULPlugin.h"
 #import "CDVInvokedUrlCommand+CULPlugin.h"
 #import "CULConfigJsonParser.h"
-#import <Cordova/CDVPluginNotifications.h>
 
 @interface CULPlugin() {
     NSArray *_supportedHosts;
     CDVPluginResult *_storedEvent;
     NSMutableDictionary<NSString *, NSString *> *_subscribers;
 }
+
 @end
 
 @implementation CULPlugin
@@ -26,21 +26,17 @@
 
 - (void)pluginInitialize {
     [self localInit];
-
-    // cordova-ios 8 delivers Universal Links through CDVSceneDelegate.
-    // This is the only runtime compatibility bridge added to the original plugin.
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(cul_continueUserActivity:)
-                                                 name:CDVPluginContinueUserActivityNotification
-                                               object:nil];
+    // Can be used for testing.
+    // Just uncomment, close the app and reopen it. That will simulate application launch from the link.
+//    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onResume:) name:UIApplicationWillEnterForegroundNotification object:nil];
 }
 
-- (void)cul_continueUserActivity:(NSNotification *)notification {
-    NSUserActivity *userActivity = notification.object;
-    if ([userActivity isKindOfClass:[NSUserActivity class]]) {
-        [self handleUserActivity:userActivity];
-    }
-}
+//- (void)onResume:(NSNotification *)notification {
+//    NSUserActivity *activity = [[NSUserActivity alloc] initWithActivityType:NSUserActivityTypeBrowsingWeb];
+//    [activity setWebpageURL:[NSURL URLWithString:@"http://site2.com/news/page?q=1&v=2#myhash"]];
+//    
+//    [self handleUserActivity:activity];
+//}
 
 - (void)handleOpenURL:(NSNotification*)notification {
     id url = notification.object;
@@ -64,6 +60,7 @@
     }
     
     [self storeEventWithHost:host originalURL:launchURL];
+    
     return YES;
 }
 
@@ -71,6 +68,7 @@
     _supportedHosts = nil;
     _subscribers = nil;
     _storedEvent = nil;
+    
     [super onAppTerminate];
 }
 
@@ -82,6 +80,9 @@
     }
     
     _subscribers = [[NSMutableDictionary alloc] init];
+    
+    // Get supported hosts from the config.xml or www/ul.json.
+    // For now priority goes to json config.
     _supportedHosts = [self getSupportedHostsFromPreferences];
 }
 
@@ -90,14 +91,28 @@
     if (jsonConfigPath) {
         return [CULConfigJsonParser parseConfig:jsonConfigPath];
     }
+    
     return [CULConfigXmlParser parse];
 }
 
+/**
+ *  Store event data for future use.
+ *  If we are resuming the app - try to consume it.
+ *
+ *  @param host        host that matches the launch url
+ *  @param originalUrl launch url
+ */
 - (void)storeEventWithHost:(CULHost *)host originalURL:(NSURL *)originalUrl {
     _storedEvent = [CDVPluginResult resultWithHost:host originalURL:originalUrl];
     [self tryToConsumeEvent];
 }
 
+/**
+ *  Find host entry that corresponds to launch url.
+ *
+ *  @param  launchURL url that launched the app
+ *  @return host entry; <code>nil</code> if none is found
+ */
 - (CULHost *)findHostByURL:(NSURL *)launchURL {
     NSURLComponents *urlComponents = [NSURLComponents componentsWithURL:launchURL resolvingAgainstBaseURL:YES];
     CULHost *host = nil;
@@ -108,11 +123,17 @@
             break;
         }
     }
+    
     return host;
 }
 
 #pragma mark Methods to send data to JavaScript
 
+/**
+ *  Try to send event to the web page.
+ *  If there is a subscriber for the event - it will be consumed. 
+ *  If not - it will stay until someone subscribes to it.
+ */
 - (void)tryToConsumeEvent {
     if (_subscribers.count == 0 || _storedEvent == nil) {
         return;
@@ -136,6 +157,7 @@
     if (eventName.length == 0) {
         return;
     }
+    
     _subscribers[eventName] = command.callbackId;
     [self tryToConsumeEvent];
 }
@@ -145,7 +167,10 @@
     if (eventName.length == 0) {
         return;
     }
+    
     [_subscribers removeObjectForKey:eventName];
 }
+
+
 
 @end
