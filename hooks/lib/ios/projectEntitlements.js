@@ -28,8 +28,6 @@ function generateEntitlements(context, pluginPreferences) {
   var associatedDomains = generateAssociatedDomainsContent(pluginPreferences);
   var entitlementFiles = findActiveEntitlementsFiles(iosPath);
 
-  // Backward-compatible fallback only when the Xcode target has no explicit
-  // CODE_SIGN_ENTITLEMENTS setting.
   if (entitlementFiles.length === 0) {
     entitlementFiles.push(path.join(iosPath, 'App', 'Resources', 'App.entitlements'));
   }
@@ -52,6 +50,7 @@ function findActiveEntitlementsFiles(iosPath) {
 
   var configurations = project.pbxXCBuildConfigurationSection();
   var result = [];
+  var isCordovaIos8Project = fs.existsSync(path.join(iosPath, 'App.xcodeproj'));
 
   Object.keys(configurations).forEach(function(key) {
     if (COMMENT_KEY.test(key)) {
@@ -66,17 +65,21 @@ function findActiveEntitlementsFiles(iosPath) {
 
     var rawPath = unquote(settings.CODE_SIGN_ENTITLEMENTS);
     var configName = unquote(settings.CONFIGURATION || entry.name || '');
-    var targetName = unquote(settings.PRODUCT_NAME || 'App');
+
+    // IMPORTANT: on cordova-ios 8 the native Xcode target/source directory is
+    // App, while PRODUCT_NAME may be the display name (e.g. "Scoop Delivery").
+    // TARGET_NAME and PRODUCT_NAME are therefore NOT interchangeable.
+    var targetName = isCordovaIos8Project ? 'App' : unquote(settings.TARGET_NAME || '');
+    var productName = unquote(settings.PRODUCT_NAME || targetName || 'App');
 
     var resolved = rawPath
       .replace(/\$\(TARGET_NAME\)/g, targetName || 'App')
       .replace(/\$\{TARGET_NAME\}/g, targetName || 'App')
-      .replace(/\$\(PRODUCT_NAME\)/g, targetName || 'App')
-      .replace(/\$\{PRODUCT_NAME\}/g, targetName || 'App')
+      .replace(/\$\(PRODUCT_NAME\)/g, productName || 'App')
+      .replace(/\$\{PRODUCT_NAME\}/g, productName || 'App')
       .replace(/\$\(CONFIGURATION\)/g, configName)
       .replace(/\$\{CONFIGURATION\}/g, configName);
 
-    // Ignore unresolved paths rather than writing to a bogus filename.
     if (/\$\(|\$\{/.test(resolved)) {
       return;
     }
@@ -103,8 +106,8 @@ function mergeAssociatedDomains(filePath, associatedDomains) {
     }
   }
 
-  // This is the only entitlement owned by this plugin. Everything else,
-  // including aps-environment, is preserved exactly as found.
+  // This plugin owns only Associated Domains. Preserve Firebase/APNs and every
+  // other entitlement already present in the file.
   entitlements[ASSOCIATED_DOMAINS] = associatedDomains;
 
   mkpath.sync(path.dirname(filePath));
