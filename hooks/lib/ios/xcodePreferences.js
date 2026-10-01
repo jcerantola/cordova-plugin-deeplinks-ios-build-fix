@@ -1,15 +1,15 @@
 /*
-Script activates support for Universal Links in the application.
+Script activates support required by Universal Links without taking ownership
+of the application's code-signing entitlements.
 
-On cordova-ios 8 the application may already have an entitlements file managed
-by Cordova or another plugin (for example Firebase/APNs). This plugin must not
-replace CODE_SIGN_ENTITLEMENTS or add the entitlements plist to Copy Bundle
-Resources. It only ensures a fallback entitlements path when none exists.
+IMPORTANT: CODE_SIGN_ENTITLEMENTS is owned by cordova-ios / the application and
+other plugins such as Firebase/APNs. This plugin must never create, replace or
+redirect it. Associated Domains are merged separately into the entitlement
+files already selected by the Xcode target.
 */
 
 var path = require('path');
 var compare = require('node-version-compare');
-var ConfigXmlHelper = require('../configXmlHelper.js');
 var IOS_DEPLOYMENT_TARGET = '8.0';
 var COMMENT_KEY = /_comment$/;
 var context;
@@ -21,29 +21,23 @@ module.exports = {
 function enableAssociativeDomainsCapability(cordovaContext) {
   context = cordovaContext;
   var projectFile = loadProjectFile();
-  activateAssociativeDomains(projectFile.xcode);
+  updateDeploymentTargetOnly(projectFile.xcode);
   projectFile.write();
 }
 
-function activateAssociativeDomains(xcodeProject) {
+function updateDeploymentTargetOnly(xcodeProject) {
   var configurations = nonComments(xcodeProject.pbxXCBuildConfigurationSection());
-  var fallbackEntitlementsFilePath = pathToEntitlementsFile();
   var config;
   var buildSettings;
-  var deploymentTargetIsUpdated;
+  var deploymentTargetIsUpdated = false;
   var configuredEntitlements = [];
 
   for (config in configurations) {
     buildSettings = configurations[config].buildSettings;
 
-    // Preserve an entitlement file already selected by Cordova/Firebase/APNs.
-    // Only provide our historical App.entitlements path when the target has no
-    // CODE_SIGN_ENTITLEMENTS at all.
-    if (!buildSettings['CODE_SIGN_ENTITLEMENTS']) {
-      buildSettings['CODE_SIGN_ENTITLEMENTS'] = '"' + fallbackEntitlementsFilePath + '"';
-      configuredEntitlements.push(fallbackEntitlementsFilePath + ' (fallback)');
-    } else {
-      configuredEntitlements.push(buildSettings['CODE_SIGN_ENTITLEMENTS'] + ' (preserved)');
+    // Diagnostic only. Never mutate CODE_SIGN_ENTITLEMENTS.
+    if (buildSettings['CODE_SIGN_ENTITLEMENTS']) {
+      configuredEntitlements.push(buildSettings['CODE_SIGN_ENTITLEMENTS'] + ' (untouched)');
     }
 
     if (buildSettings['IPHONEOS_DEPLOYMENT_TARGET']) {
@@ -61,7 +55,7 @@ function activateAssociativeDomains(xcodeProject) {
     console.log('IOS project now has deployment target set as: ' + IOS_DEPLOYMENT_TARGET);
   }
 
-  console.log('IOS project Code Sign Entitlements preserved/configured as: ' + configuredEntitlements.join(', '));
+  console.log('IOS project Code Sign Entitlements left untouched: ' + (configuredEntitlements.length ? configuredEntitlements.join(', ') : 'none configured at this stage'));
 }
 
 function loadProjectFile() {
@@ -138,17 +132,4 @@ function iosPlatformPath() {
 
 function projectRoot() {
   return context.opts.projectRoot;
-}
-
-function pathToEntitlementsFile() {
-  var projectFiles = require('glob').globSync(path.join(iosPlatformPath(), '*.xcodeproj'));
-  if (projectFiles.some(function(projectFile) { return path.basename(projectFile) === 'App.xcodeproj'; })) {
-    return path.join('App', 'Resources', 'App.entitlements');
-  }
-
-  var configXmlHelper = new ConfigXmlHelper(context),
-    projectName = configXmlHelper.getProjectName(),
-    fileName = projectName + '.entitlements';
-
-  return path.join(projectName, 'Resources', fileName);
 }
