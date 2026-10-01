@@ -1,100 +1,132 @@
 /*
 Adds the Associated Domains entitlement required by Universal Links.
 
-IMPORTANT: this plugin must never own or recreate the application's complete
-entitlements set. Other Cordova plugins (Firebase/APNs, Sign in with Apple,
-Keychain groups, etc.) may write to the same entitlements file.
+cordova-ios 8 may use configuration-specific entitlement files such as:
+  App/Entitlements-Debug.plist
+  App/Entitlements-Release.plist
 
-This module therefore reads the current entitlements plist, preserves every
-existing key/value exactly as provided by the other plugins/Cordova, and only
-adds or updates `com.apple.developer.associated-domains`.
+Other plugins (notably Firebase/APNs) may own and update those files. We must
+merge `com.apple.developer.associated-domains` into the entitlement file(s)
+actually selected by CODE_SIGN_ENTITLEMENTS, never replace the full set.
 */
 
 var path = require('path');
 var fs = require('fs');
 var plist = require('plist');
 var mkpath = require('mkpath');
-var ConfigXmlHelper = require('../configXmlHelper.js');
+var xcode = require('xcode');
+var glob = require('glob');
 var ASSOCIATED_DOMAINS = 'com.apple.developer.associated-domains';
-var context;
-var projectName;
-var entitlementsFilePath;
+var COMMENT_KEY = /_comment$/;
 
 module.exports = {
   generateAssociatedDomainsEntitlements: generateEntitlements
 };
 
-function generateEntitlements(cordovaContext, pluginPreferences) {
-  context = cordovaContext;
-
-  var filePath = pathToEntitlementsFile();
-  var currentEntitlements = readEntitlements(filePath);
+function generateEntitlements(context, pluginPreferences) {
+  var iosPath = path.join(context.opts.projectRoot, 'platforms', 'ios');
   var associatedDomains = generateAssociatedDomainsContent(pluginPreferences);
+  var entitlementFiles = findActiveEntitlementsFiles(iosPath);
 
-  // Merge only the key owned by this plugin. Do not delete, replace or
-  // synthesize entitlements owned by Cordova or other plugins (e.g.
-  // aps-environment from Firebase/APNs).
-  currentEntitlements[ASSOCIATED_DOMAINS] = associatedDomains;
-
-  saveEntitlements(filePath, currentEntitlements);
-}
-
-function readEntitlements(filePath) {
-  if (!fs.existsSync(filePath)) {
-    return {};
+  // Backward-compatible fallback only when the Xcode target has no explicit
+  // CODE_SIGN_ENTITLEMENTS setting.
+  if (entitlementFiles.length === 0) {
+    entitlementFiles.push(path.join(iosPath, 'App', 'Resources', 'App.entitlements'));
   }
 
-  var content = fs.readFileSync(filePath, 'utf8');
-  if (!content || !content.trim()) {
-    return {};
-  }
+  entitlementFiles.forEach(function(filePath) {
+    mergeAssociatedDomains(filePath, associatedDomains);
+  });
 
-  var parsed = plist.parse(content);
-  return parsed && typeof parsed === 'object' ? parsed : {};
+  console.log('[cordova-plugin-deeplinks] Associated Domains merged into: ' + entitlementFiles.join(', '));
 }
 
-function saveEntitlements(filePath, entitlements) {
+function findActiveEntitlementsFiles(iosPath) {
+  var projectFiles = glob.globSync(path.join(iosPath, '*.xcodeproj', 'project.pbxproj'));
+  if (!projectFiles.length) {
+    return [];
+  }
+
+  var project = xcode.project(projectFiles[0]);
+  project.parseSync();
+
+  var configurations = project.pbxXCBuildConfigurationSection();
+  var result = [];
+
+  Object.keys(configurations).forEach(function(key) {
+    if (COMMENT_KEY.test(key)) {
+      return;
+    }
+
+    var entry = configurations[key];
+    var settings = entry && entry.buildSettings;
+    if (!settings || !settings.CODE_SIGN_ENTITLEMENTS) {
+      return;
+    }
+
+    var rawPath = unquote(settings.CODE_SIGN_ENTITLEMENTS);
+    var configName = unquote(settings.CONFIGURATION || entry.name || '');
+    var targetName = unquote(settings.PRODUCT_NAME || 'App');
+
+    var resolved = rawPath
+      .replace(/\$\(TARGET_NAME\)/g, targetName || 'App')
+      .replace(/\$\{TARGET_NAME\}/g, targetName || 'App')
+      .replace(/\$\(PRODUCT_NAME\)/g, targetName || 'App')
+      .replace(/\$\{PRODUCT_NAME\}/g, targetName || 'App')
+      .replace(/\$\(CONFIGURATION\)/g, configName)
+      .replace(/\$\{CONFIGURATION\}/g, configName);
+
+    // Ignore unresolved paths rather than writing to a bogus filename.
+    if (/\$\(|\$\{/.test(resolved)) {
+      return;
+    }
+
+    var absolutePath = path.isAbsolute(resolved) ? resolved : path.join(iosPath, resolved);
+    if (result.indexOf(absolutePath) === -1) {
+      result.push(absolutePath);
+    }
+  });
+
+  return result;
+}
+
+function mergeAssociatedDomains(filePath, associatedDomains) {
+  var entitlements = {};
+
+  if (fs.existsSync(filePath)) {
+    var content = fs.readFileSync(filePath, 'utf8');
+    if (content && content.trim()) {
+      var parsed = plist.parse(content);
+      if (parsed && typeof parsed === 'object') {
+        entitlements = parsed;
+      }
+    }
+  }
+
+  // This is the only entitlement owned by this plugin. Everything else,
+  // including aps-environment, is preserved exactly as found.
+  entitlements[ASSOCIATED_DOMAINS] = associatedDomains;
+
   mkpath.sync(path.dirname(filePath));
   fs.writeFileSync(filePath, plist.build(entitlements), 'utf8');
 }
 
 function generateAssociatedDomainsContent(pluginPreferences) {
-  var domainsList = [];
+  var domains = [];
 
   pluginPreferences.hosts.forEach(function(host) {
-    var link = 'applinks:' + host.name;
-    if (domainsList.indexOf(link) === -1) {
-      domainsList.push(link);
+    var value = 'applinks:' + host.name;
+    if (domains.indexOf(value) === -1) {
+      domains.push(value);
     }
   });
 
-  return domainsList;
+  return domains;
 }
 
-function pathToEntitlementsFile() {
-  if (entitlementsFilePath === undefined) {
-    var iosPath = path.join(getProjectRoot(), 'platforms', 'ios');
-    var appProjectPath = path.join(iosPath, 'App.xcodeproj');
-
-    if (fs.existsSync(appProjectPath)) {
-      entitlementsFilePath = path.join(iosPath, 'App', 'Resources', 'App.entitlements');
-    } else {
-      entitlementsFilePath = path.join(iosPath, getProjectName(), 'Resources', getProjectName() + '.entitlements');
-    }
+function unquote(value) {
+  if (value === undefined || value === null) {
+    return '';
   }
-
-  return entitlementsFilePath;
-}
-
-function getProjectRoot() {
-  return context.opts.projectRoot;
-}
-
-function getProjectName() {
-  if (projectName === undefined) {
-    var configXmlHelper = new ConfigXmlHelper(context);
-    projectName = configXmlHelper.getProjectName();
-  }
-
-  return projectName;
+  return String(value).replace(/^['\"]|['\"]$/g, '');
 }
