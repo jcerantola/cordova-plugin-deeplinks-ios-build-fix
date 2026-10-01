@@ -28,6 +28,7 @@
   <platform name="ios">
     <hook src="hooks/iosBeforePrepareHook.js" type="before_prepare" />
     <hook src="hooks/setSceneDelegate.js" type="after_prepare" />
+    <hook src="hooks/iosBeforeCompileEntitlements.js" type="before_compile" />
 
     <config-file parent="/*" target="config.xml">
       <feature name="UniversalLinks">
@@ -84,10 +85,6 @@
     <source-file src="src/android/com/nordnetab/cordova/ul/model/JSMessage.java" target-dir="src/com/nordnetab/cordova/ul/model/"/>
     <source-file src="src/android/com/nordnetab/cordova/ul/model/ULHost.java" target-dir="src/com/nordnetab/cordova/ul/model/"/>
     <source-file src="src/android/com/nordnetab/cordova/ul/model/ULPath.java" target-dir="src/com/nordnetab/cordova/ul/model/"/>
-
-    <source-file src="src/android/com/nordnetab/cordova/ul/parser/ULConfigXmlParser.java" target-dir="src/com/nordnetab/cordova/ul/parser/"/>
-    <source-file src="src/android/com/nordnetab/cordova/ul/parser/XmlTags.java" target-dir="src/com/nordnetab/cordova/ul/parser/"/>
-
     <source-file src="src/android/com/nordnetab/cordova/ul/UniversalLinksPlugin.java" target-dir="src/com/nordnetab/cordova/ul/"/>
 
   </platform>
